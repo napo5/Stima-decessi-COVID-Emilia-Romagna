@@ -1,0 +1,276 @@
+---
+title: "STIMA DEI DECESSI DA COVID-19 IN EMILIA-ROMAGNA"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+$$ \\ $$
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Lavoro a cura di:
+Alessandro Fossati (mat.819499)
+Luca Pretini (mat.864014)
+
+$$\\$$
+
+Lo scopo della analisi è quello di stimare i decessi totali da COVID-19 (non solo i casi accertati dalla Protezione Civile) nella regione Emilia-Romagna nel mese di Marzo. Scegliamo questa regione in quanto la copertura dei dati ISTAT risulta soddisfacente a differenza della copertura per la maggior parte delle regioni italiane. 
+
+```{r , results= 'hide', warning=FALSE}
+#import dei dati e delle librerie utili:
+
+dati=read.csv("C:\\Users\\Alessandro\\Desktop\\AleBicocca\\Data Science\\Anno 1\\Data Science Lab\\Assignements\\comune_giorno.csv")
+#dati=read.csv("/home/napo/Downloads/comune_giorno.csv")
+
+library(dplyr,warn.conflicts = FALSE) 
+library(tidyr) 
+library(ggplot2) 
+library(plotly,warn.conflicts = FALSE)  
+```
+
+```{r}
+#valutiamo la struttura dei dati:
+glimpse(dati)
+```
+
+Ai fini della nostra analisi risultano superflue alcune variabili, le quali verranno dunque eliminate:
+
+```{r}
+dati=dati[,-c(8,10:21)]
+colnames(dati)
+```
+
+In questo dataset l'ISTAT fornisce una copertura completa per i decessi del quinquennio 2015-2019, mentre per l'anno 2020 i dati sono in continuo aggiornamento e non disponibili per tutti i comuni.  
+Si é deciso quindi di dividere il dataset in diversi subset, per comprendere la situazione dei comuni dell' Emilia con dati giá diffusi e per poter successivamente stimare l'andamento nei comuni in cui i dati non sono stati diffusi.  
+Il conteggio dei decessi avviene infatti a livello comunale e l'ISTAT aggiorna il dataset su "blocchi comunali" ( ogni comune presenta o tutti i dati di marzo o nessuno).  
+Per un'analisi piú capillare si é scelto di lavorare non con l'intera regione ma con le singole province, creando per ognuna di esse un subset con dati mancanti e non.  
+Si ottengono quindi 18 subset:  
+per ognuna delle 9 province si ha un subset dei comuni di cui si é a conoscenza dei decessi 2020 ed uno con i dati 2020 non diffusi.  
+
+
+```{r}
+
+# si introduce la variabile data nel formato mm-dd-YYYY
+dati %>% mutate(DATA = as.Date(paste0("0", GE,"2020"), format = "%m%d%Y")) -> dati
+
+
+# subsets con dati su decessi 2020 ( senza 9999)
+bologna_no_miss=filter(dati,NOME_PROVINCIA == "Bologna", TOTALE_20 < 9999,GE>=301  ,GE<=331)
+ferrara_no_miss=filter(dati,NOME_PROVINCIA == "Ferrara", TOTALE_20 < 9999,(GE>=301 & GE<=331))
+# (workaround) si seleziona la provincia di forlí tramite codice provincia per evitare incompatibilitá con la lettera accentata
+forli_no_miss=filter(dati,PROV==40, TOTALE_20 < 9999,(GE>=301 & GE<=331))
+modena_no_miss=filter(dati,NOME_PROVINCIA == "Modena", TOTALE_20 < 9999,(GE>=301 & GE<=331))
+parma_no_miss=filter(dati,NOME_PROVINCIA == "Parma", TOTALE_20 < 9999,(GE>=301 & GE<=331))
+piacenza_no_miss=filter(dati,NOME_PROVINCIA == "Piacenza", TOTALE_20 < 9999,(GE>=301 & GE<=331))
+ravenna_no_miss=filter(dati,NOME_PROVINCIA == "Ravenna", TOTALE_20 < 9999,(GE>=301 & GE<=331))
+reggio_no_miss=filter(dati,NOME_PROVINCIA == "Reggio nell'Emilia", TOTALE_20 < 9999,(GE>=301 & GE<=331))
+rimini_no_miss=filter(dati,NOME_PROVINCIA == "Rimini", TOTALE_20 < 9999,(GE>=301 & GE<=331))
+
+
+# subset senza dati su decessi 2020 ( con 9999)
+bologna_miss=filter(dati,NOME_PROVINCIA == "Bologna", TOTALE_20 == 9999,GE>=301  ,GE<=331)
+ferrara_miss=filter(dati,NOME_PROVINCIA == "Ferrara", TOTALE_20 == 9999,(GE>=301 & GE<=331))
+forli_miss=filter(dati,PROV==40, TOTALE_20 == 9999,(GE>=301 & GE<=331))
+modena_miss=filter(dati,NOME_PROVINCIA == "Modena", TOTALE_20 == 9999,(GE>=301 & GE<=331))
+parma_miss=filter(dati,NOME_PROVINCIA == "Parma", TOTALE_20 == 9999,(GE>=301 & GE<=331))
+piacenza_miss=filter(dati,NOME_PROVINCIA == "Piacenza", TOTALE_20 == 9999,(GE>=301 & GE<=331))
+ravenna_miss=filter(dati,NOME_PROVINCIA == "Ravenna", TOTALE_20 == 9999,(GE>=301 & GE<=331))
+reggio_miss=filter(dati,NOME_PROVINCIA == "Reggio nell'Emilia", TOTALE_20 == 9999,(GE>=301 & GE<=331))
+rimini_miss=filter(dati,NOME_PROVINCIA == "Rimini", TOTALE_20 == 9999,(GE>=301 & GE<=331))
+
+```
+
+
+Si introducono delle funzioni che verranno usate successivamente per operare sui subsets:
+
+```{r}
+
+# prende in input un subset del df ISTAT, restituisce il df con somma decessi per ogni anno
+df_sum<- function(df){
+    
+  df %>%group_by(DATA)
+ df%>% summarise(TOTALE_15 = sum(TOTALE_15),TOTALE_16=sum(TOTALE_16),
+            TOTALE_17=sum(TOTALE_17),TOTALE_18=sum(TOTALE_18),
+            TOTALE_19=sum(TOTALE_19),TOTALE_20=sum(TOTALE_20)) -> df_sum # somme dei decessi negli anni 15-20
+  
+ return(df_sum)
+  
+}
+
+#  prende in input un subset del df ISTAT, restiutisce la media dei decessi sul quinquennio 2015-2019
+mediadecessi15_19 <- function(df){
+  
+df_sum = df_sum(df)
+  
+  
+df_sum$med_15_19=(df_sum$TOTALE_15+df_sum$TOTALE_16+df_sum$TOTALE_17+df_sum$TOTALE_18+df_sum$TOTALE_19)/5 
+
+  return(df_sum$med_15_19)
+ 
+}
+
+
+#  prende in input un subset del df ISTAT (contenente i decessi 2020), restituisce l'incremento percentuale dei decessi tra l'anno 2020 e la media quinquennio 15-19 
+
+incrementopercentuale <- function(df){
+  df_sum = df_sum(df)
+  
+  return((df_sum$TOTALE_20/mediadecessi15_19(df) *100 ) - 100)
+}
+
+
+```
+
+
+Successivamente viene calcolato l'incremento percentuale nei subset che presentano i decessi 2020:
+
+
+```{r}
+
+
+vett_province_no_miss <- list(bologna_no_miss,ferrara_no_miss,forli_no_miss,modena_no_miss,parma_no_miss,
+                              piacenza_no_miss,ravenna_no_miss,reggio_no_miss,rimini_no_miss)
+
+
+incrementi_province = c()
+for(x in 1:9){
+  incrementi_province = c(incrementi_province,incrementopercentuale(vett_province_no_miss[[x]]))
+}
+
+# lista degli incrementi percentuali di ogni provincia che presenta valori finiti per i decessi del 2020
+paste0(round(incrementi_province,0),"%")
+
+# media degli incrementi precedentemente calcolati
+paste0(round(mean(incrementi_province),1)," % :  media degli incrementi percentuali")
+
+
+```
+
+Si puó notare una grande eterogeneitá nelle percentuali di aumento dei decessi tra le singole province.  
+Di conseguenza la media fornita per gli icrementi percentuali é solo indicativa e poco rappresentativa.  
+Questa osservazione avvalora la scelta della divisione in province,restringendo il territorio da regione a provincia si dovrebbe infatti ottenere una precisione maggiore per la stima dei decessi da COVID.  
+
+
+Per i subset senza dati mancanti si ipotizza che i decessi da COVID siano l'intero incremento rispetto alla media del quinquennio 15-19:
+
+
+```{r}
+
+decessi_covid_no_miss <- function(df_no_miss){
+  
+  df_sum = df_sum(df_no_miss)
+
+  decessi_covid=df_sum$TOTALE_20-mediadecessi15_19(df_no_miss)
+  return(decessi_covid)
+  
+}
+
+```
+
+per i subset senza dati inerenti ai decessi 2020 si stimano i decessi per COVID basandosi sull'incremento calcolato nei subset precedenti,assumendo che tutti i comuni appartenenti ad una provincia si comportino approssimativamente nella stessa maniera in questa particolare situazione:
+
+```{r}
+
+stima_decessi_covid_2020_miss <- function(df_miss,df_no_miss){
+  mediadecessi15_19(df_miss)*incrementopercentuale(df_no_miss)/100
+}
+
+```
+
+Sommando i decessi ottenuti da ogni coppia di subset si possono ottenere i decessi stimati per ogni provincia:
+
+```{r}
+
+tot_decessi_covid_bologna = stima_decessi_covid_2020_miss(bologna_miss,bologna_no_miss)+decessi_covid_no_miss(bologna_no_miss)
+tot_decessi_covid_ferrara = stima_decessi_covid_2020_miss(ferrara_miss,ferrara_no_miss)+decessi_covid_no_miss(ferrara_no_miss)
+tot_decessi_covid_forli = stima_decessi_covid_2020_miss(forli_miss,forli_no_miss)+decessi_covid_no_miss(forli_no_miss)
+tot_decessi_covid_modena = stima_decessi_covid_2020_miss(modena_miss,modena_no_miss)+decessi_covid_no_miss(modena_no_miss)
+tot_decessi_covid_parma = stima_decessi_covid_2020_miss(parma_miss,parma_no_miss)+decessi_covid_no_miss(parma_no_miss)
+tot_decessi_covid_piacenza = stima_decessi_covid_2020_miss(piacenza_miss,piacenza_no_miss)+decessi_covid_no_miss(piacenza_no_miss)
+tot_decessi_covid_ravenna = stima_decessi_covid_2020_miss(ravenna_miss,ravenna_no_miss)+decessi_covid_no_miss(ravenna_no_miss)
+tot_decessi_covid_reggio = stima_decessi_covid_2020_miss(reggio_miss,reggio_no_miss)+decessi_covid_no_miss(reggio_no_miss)
+tot_decessi_covid_rimini = stima_decessi_covid_2020_miss(rimini_miss,rimini_no_miss)+decessi_covid_no_miss(rimini_no_miss)
+
+```
+
+La stima di decessi dell'intera regione si ottiene dalla sommatoria dei decessi provinciali:
+
+```{r}
+vett_decessi_covid_province  = c(tot_decessi_covid_bologna,tot_decessi_covid_ferrara,tot_decessi_covid_forli,tot_decessi_covid_modena,tot_decessi_covid_parma,tot_decessi_covid_piacenza,tot_decessi_covid_ravenna,tot_decessi_covid_reggio,tot_decessi_covid_rimini)
+
+
+decessi_tot_covid_emilia = round(sum(vett_decessi_covid_province))
+
+paste0("stima decessi da COVID:        ",decessi_tot_covid_emilia)
+
+
+```
+
+Si presentano ora i decessi da COVID nel mese di Marzo stimati per provincia:
+
+```{r}
+province=c("Bologna","Ferrara","Forlì","Modena","Parma","Piacenza","Ravenna","Reggio","Rimini")
+morti_da_covid=round(vett_decessi_covid_province,0)
+paste0(province,":  ",morti_da_covid,"  morti da covid")
+```
+
+
+Si stima quindi l'incremento percentuale di decessi sull'intera regione rispetto alla media del quinquennio 15-19:  
+
+```{r}
+
+emilia_miss=filter(dati,NOME_REGIONE == "Emilia-Romagna", TOTALE_20 == 9999,GE>=301  ,GE<=331)
+emilia_no_miss=filter(dati,NOME_REGIONE == "Emilia-Romagna", TOTALE_20 < 9999,GE>=301  ,GE<=331)
+
+decessi_tot_15_19_emilia = mediadecessi15_19(emilia_miss)+mediadecessi15_19(emilia_no_miss)
+
+# media decessi in Emilia nel quinquennio 15-19
+paste0("media decessi Marzo 15-19:     ",round(decessi_tot_15_19_emilia,0))
+
+#stima totale decessi 2020 Emilia
+decessi_2020_emilia = decessi_tot_15_19_emilia+decessi_tot_covid_emilia
+
+paste0("decessi totali Marzo 2020:     ",round(decessi_2020_emilia,0))
+
+percentuale_emilia = round(decessi_tot_covid_emilia/decessi_tot_15_19_emilia *100,1) 
+#incremento percentuale regionale
+paste0("incremento percentuale:        ",percentuale_emilia,"%")
+```
+
+
+
+Viene ora calcolato e successivamente rappresentato graficamente l'impatto del COVID sui morti giornalieri per il mese di marzo.  
+I decessi dell'intera regione vengono raggruppati per giorno:
+
+```{r}
+
+dati %>% mutate(DATA = as.Date(paste0("0", GE,"2020"), format = "%m%d%Y")) -> dati
+dati%>% filter(NOME_REGIONE == "Emilia-Romagna",  #regione di riferimento
+               TOTALE_20 < 9999, #escludiamo i missing data
+               (GE>=301 & GE<=331)  ) -> wdt    
+wdt %>% group_by(DATA) %>%
+  summarise(TOTALE_15 = sum(TOTALE_15),TOTALE_16=sum(TOTALE_16),
+            TOTALE_17=sum(TOTALE_17),TOTALE_18=sum(TOTALE_18),
+            TOTALE_19=sum(TOTALE_19),TOTALE_20=sum(TOTALE_20)) -> emilia
+emilia$med_15_19=(emilia$TOTALE_15+emilia$TOTALE_16+emilia$TOTALE_17+emilia$TOTALE_18+emilia$TOTALE_19)/5
+emilia$covid_impact=emilia$TOTALE_20-emilia$med_15_19
+emilia$sd_decessi<-apply(emilia[,c(2:6)],MARGIN=1, sd) #dvst su tot15-tot19
+
+```
+
+
+Si presenta ora un grafico che permette di comprendere l'impatto che ha avuto il COVID giorno per giorno sui decessi in Emilia nel mese di Marzo rispetto ai 5 anni precedenti (utilizzando i dati che presentano un valore per TOTALE_20):
+
+```{r}
+ggplot(emilia,aes(x=DATA,y=covid_impact))+
+  geom_point(col='blue')+
+  coord_cartesian( ylim = c(0, 160))+
+  geom_errorbar(aes(ymin=covid_impact-sd_decessi, ymax=covid_impact+sd_decessi), width=.55)
+
+
+```
+
